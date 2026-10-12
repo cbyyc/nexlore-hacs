@@ -1,10 +1,10 @@
 {
   "domain": "nexlore",
   "name": "NEXLORE",
-  "codeowners": [],
+  "codeowners": ["@cbyyc"],
   "config_flow": true,
-  "documentation": "https://github.com/DerKezorm/nexlore/blob/main/docs/api.md",
-  "issue_tracker": "https://github.com/DerKezorm/nexlore/issues",
+  "documentation": "https://github.com/cbyyc/nexlore-hacs",
+  "issue_tracker": "https://github.com/cbyyc/nexlore-hacs/issues",
   "iot_class": "cloud_polling",
   "integration_type": "service",
   "version": "0.1.0",

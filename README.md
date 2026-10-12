@@ -11,15 +11,14 @@ This directory is an isolated HACS integration repository root:
 - hacs.json and this README are at the distribution root.
 
 This package is maintained in a private Gitea repository as the canonical
-source. A public GitHub push mirror will be used for HACS, which requires
-public GitHub repositories. The GitHub mirror link will be added here once its
-repository has been created.
+source. Its public GitHub push mirror is
+https://github.com/cbyyc/nexlore-hacs. HACS requires public GitHub
+repositories.
 
 ## HACS installation after distribution
 
-1. In Home Assistant, open HACS, choose Custom repositories, add the public
-   GitHub mirror
-   as an Integration, and install NEXLORE.
+1. In Home Assistant, open HACS, choose Custom repositories, add
+   https://github.com/cbyyc/nexlore-hacs as an Integration, and install NEXLORE.
 2. Restart Home Assistant, then add NEXLORE from Settings > Devices & services
    > Add integration.
 3. Enter the NEXLORE base URL, a write-level API token, and a writable space.
