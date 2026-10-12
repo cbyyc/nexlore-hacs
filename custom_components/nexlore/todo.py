@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from homeassistant.components.todo import (
@@ -30,6 +32,8 @@ from .api import (
 from .const import CONF_SPACE
 from .coordinator import NexloreDataUpdateCoordinator
 from .models import NexloreTask
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class NexloreTodoList(CoordinatorEntity, TodoListEntity):
@@ -86,11 +90,13 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
                 "A previous NEXLORE create is still uncertain; no duplicate was sent"
             ) from err
 
+        create_confirmed = False
         try:
             response = await self.coordinator.client.async_create_inbox_task(
                 self.coordinator.space,
                 summary,
             )
+            create_confirmed = True
             await self.coordinator.async_set_pending_path(uid, response.get("path"))
         except NexloreAuthError as err:
             await self.coordinator.async_cancel_pending_create(uid)
@@ -107,23 +113,49 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
             # this request is never repeated automatically.
             pass
 
-        try:
-            await self.coordinator.async_request_refresh()
-        except ConfigEntryAuthFailed:
-            raise
-        except UpdateFailed:
+        refresh_error: UpdateFailed | None = None
+        for attempt in range(2):
+            try:
+                await self.coordinator.async_request_refresh()
+            except ConfigEntryAuthFailed:
+                raise
+            except UpdateFailed as err:
+                refresh_error = err
+            else:
+                refresh_error = None
+                if self.coordinator.task_for_uid(uid) is not None:
+                    return
+
+            if attempt == 0:
+                await asyncio.sleep(1)
+
+        if create_confirmed:
+            if refresh_error is not None:
+                _LOGGER.warning(
+                    "NEXLORE acknowledged a task create, but the task list "
+                    "could not be refreshed. The pending create will be "
+                    "reconciled on a later poll."
+                )
+            else:
+                _LOGGER.warning(
+                    "NEXLORE acknowledged a task create, but the task is not "
+                    "visible in the refreshed list yet. It will be reconciled "
+                    "on a later poll."
+                )
+            return
+
+        if refresh_error is not None:
             raise HomeAssistantError(
                 "NEXLORE may have accepted this task, but the list could not be "
                 "refreshed. The integration will reconcile it later and will not "
                 "repeat the create request."
-            ) from None
+            ) from refresh_error
 
-        if self.coordinator.task_for_uid(uid) is None:
-            raise HomeAssistantError(
-                "NEXLORE may have accepted this task, but it could not be matched "
-                "uniquely. The integration will not repeat the create request; "
-                "check the NEXLORE inbox before trying again."
-            )
+        raise HomeAssistantError(
+            "NEXLORE may have accepted this task, but it could not be matched "
+            "uniquely. The integration will not repeat the create request; "
+            "check the NEXLORE inbox before trying again."
+        )
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Complete or reopen a task; reject all other edits."""
