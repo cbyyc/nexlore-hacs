@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any
 
 from homeassistant.components.todo import (
@@ -33,8 +32,6 @@ from .const import CONF_SPACE
 from .coordinator import NexloreDataUpdateCoordinator
 from .models import NexloreTask
 
-_LOGGER = logging.getLogger(__name__)
-
 
 class NexloreTodoList(CoordinatorEntity, TodoListEntity):
     """A NEXLORE space exposed as a standard Home Assistant to-do list."""
@@ -55,11 +52,37 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
         super().__init__(coordinator)
         self._attr_unique_id = entry.entry_id
         self._attr_name = entry.data[CONF_SPACE]
+        self._optimistic_items: dict[str, TodoItem] = {}
+        self._create_refresh_tasks: set[asyncio.Task[None]] = set()
 
     @property
     def todo_items(self) -> list[TodoItem]:
         """Return the last coordinator snapshot without performing I/O."""
-        return [_as_todo_item(task) for task in self.coordinator.data or []]
+        items = [_as_todo_item(task) for task in self.coordinator.data or []]
+        visible_uids = {item.uid for item in items}
+        items.extend(
+            item
+            for uid, item in self._optimistic_items.items()
+            if uid not in visible_uids
+        )
+        return items
+
+    def _handle_coordinator_update(self) -> None:
+        """Drop optimistic rows once the server task is mapped to the same UID."""
+        for uid in tuple(self._optimistic_items):
+            if self.coordinator.task_for_uid(uid) is not None:
+                self._optimistic_items.pop(uid)
+        super()._handle_coordinator_update()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Stop short-lived create reconciliation jobs when the entry unloads."""
+        tasks = tuple(self._create_refresh_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._create_refresh_tasks.clear()
+        await super().async_will_remove_from_hass()
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
         """Create one task through NEXLORE's inbox endpoint."""
@@ -113,6 +136,17 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
             # this request is never repeated automatically.
             pass
 
+        if create_confirmed:
+            if self.coordinator.task_for_uid(uid) is None:
+                self._optimistic_items[uid] = TodoItem(
+                    uid=uid,
+                    summary=summary,
+                    status=TodoItemStatus.NEEDS_ACTION,
+                )
+                self.async_write_ha_state()
+                self._schedule_create_reconciliation(uid)
+            return
+
         refresh_error: UpdateFailed | None = None
         for attempt in range(2):
             try:
@@ -129,21 +163,6 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
             if attempt == 0:
                 await asyncio.sleep(1)
 
-        if create_confirmed:
-            if refresh_error is not None:
-                _LOGGER.warning(
-                    "NEXLORE acknowledged a task create, but the task list "
-                    "could not be refreshed. The pending create will be "
-                    "reconciled on a later poll."
-                )
-            else:
-                _LOGGER.warning(
-                    "NEXLORE acknowledged a task create, but the task is not "
-                    "visible in the refreshed list yet. It will be reconciled "
-                    "on a later poll."
-                )
-            return
-
         if refresh_error is not None:
             raise HomeAssistantError(
                 "NEXLORE may have accepted this task, but the list could not be "
@@ -157,19 +176,55 @@ class NexloreTodoList(CoordinatorEntity, TodoListEntity):
             "check the NEXLORE inbox before trying again."
         )
 
+    def _schedule_create_reconciliation(self, uid: str) -> None:
+        """Refresh shortly after create, then leave normal polling in charge."""
+        task = self.hass.async_create_task(
+            self._async_reconcile_create(uid),
+            f"nexlore create reconciliation {uid}",
+        )
+        self._create_refresh_tasks.add(task)
+        task.add_done_callback(self._create_refresh_tasks.discard)
+
+    async def _async_reconcile_create(self, uid: str) -> None:
+        """Give an acknowledged inbox write a few quick chances to appear."""
+        for delay in (2, 8, 20):
+            await asyncio.sleep(delay)
+            if self.coordinator.task_for_uid(uid) is not None:
+                return
+            try:
+                await self.coordinator.async_request_refresh()
+            except (ConfigEntryAuthFailed, UpdateFailed):
+                continue
+            if self.coordinator.task_for_uid(uid) is not None:
+                return
+
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Complete or reopen a task; reject all other edits."""
         if not item.uid:
             raise HomeAssistantError("This NEXLORE task has no stable item ID")
 
         task = self.coordinator.task_for_uid(item.uid)
+        if task is None and item.uid in self._optimistic_items:
+            try:
+                await self.coordinator.async_request_refresh()
+            except ConfigEntryAuthFailed:
+                raise
+            except UpdateFailed as err:
+                raise HomeAssistantError(
+                    "This NEXLORE task is still being reconciled; refresh the list "
+                    "and retry shortly"
+                ) from err
+            task = self.coordinator.task_for_uid(item.uid)
         if task is None:
             raise HomeAssistantError(
-                "This NEXLORE task is no longer available; refresh the list"
+                "This NEXLORE task is still being reconciled or is no longer "
+                "available; refresh the list and retry"
             )
 
         if task.status == "cancelled":
-            raise HomeAssistantError("Cancelled NEXLORE tasks cannot be changed from Home Assistant")
+            raise HomeAssistantError(
+                "Cancelled NEXLORE tasks cannot be changed from Home Assistant"
+            )
 
         original_item = _as_todo_item(task)
         if item.summary != original_item.summary:
