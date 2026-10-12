@@ -1,0 +1,14 @@
+{
+  "domain": "nexlore",
+  "name": "NEXLORE",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/DerKezorm/nexlore/blob/main/docs/api.md",
+  "issue_tracker": "https://github.com/DerKezorm/nexlore/issues",
+  "iot_class": "cloud_polling",
+  "integration_type": "service",
+  "version": "0.1.0",
+  "requirements": [],
+  "dependencies": [],
+  "homeassistant": "2024.4.0"
+}

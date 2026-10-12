@@ -1,0 +1,46 @@
+{
+  "config": {
+    "flow_title": "NEXLORE task list",
+    "step": {
+      "user": {
+        "title": "Connect to NEXLORE",
+        "description": "Enter the NEXLORE base URL and a write-level API token. The token is saved in this Home Assistant config entry.",
+        "data": {
+          "base_url": "Base URL",
+          "api_token": "API token"
+        },
+        "data_description": {
+          "base_url": "The NEXLORE server origin, for example https://notes.example.com.",
+          "api_token": "A NEXLORE API token with write access to the space you want to use."
+        }
+      },
+      "space": {
+        "title": "Choose a space",
+        "description": "Select the writable NEXLORE space to expose as a Home Assistant to-do list.",
+        "data": {
+          "space": "Space"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update the NEXLORE API token",
+        "description": "Enter a replacement write-level token. The configured base URL and space will be kept.",
+        "data": {
+          "api_token": "API token"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid HTTP or HTTPS base URL without credentials, a query, or a fragment.",
+      "invalid_auth": "NEXLORE did not accept this API token.",
+      "read_only_token": "This integration needs a write-level API token.",
+      "no_writable_spaces": "The token cannot write to any available NEXLORE space.",
+      "invalid_space": "The selected space is not writable with this token.",
+      "cannot_connect": "Could not connect to NEXLORE or read a valid API response."
+    },
+    "abort": {
+      "already_configured": "This NEXLORE space is already configured for this server.",
+      "invalid_space": "The selected space is no longer available.",
+      "reauth_successful": "The NEXLORE API token was updated."
+    }
+  }
+}
