@@ -11,7 +11,7 @@ This directory is an isolated HACS integration repository root:
 - hacs.json and this README are at the distribution root.
 
 This package is maintained in a private Gitea repository as the canonical
-source. Its public GitHub push mirror is
+source. The public GitHub HACS distribution copy is
 https://github.com/cbyyc/nexlore-hacs. HACS requires public GitHub
 repositories.
 
